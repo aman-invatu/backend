@@ -68,8 +68,20 @@ class DatabaseController {
                 return res.status(400).json({ success: false, message: 'Source and target table names are required' });
             }
 
+            // Reset progress when starting new migration
+            databaseConfig.resetMigrationProgress();
+            
             const result = await databaseConfig.migrateData(sourceTable, targetTable);
             res.json(result);
+        } catch (error) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
+
+    async getMigrationProgress(req, res) {
+        try {
+            const progress = databaseConfig.getMigrationProgress();
+            res.json(progress);
         } catch (error) {
             res.status(500).json({ success: false, message: error.message });
         }

@@ -5,6 +5,25 @@ class DatabaseConfig {
     constructor() {
         this.retoolPool = null;
         this.supabasePool = null;
+        this.migrationProgress = {
+            totalRecords: 0,
+            migratedRecords: 0,
+            percentage: 0,
+            isComplete: false
+        };
+    }
+
+    resetMigrationProgress() {
+        this.migrationProgress = {
+            totalRecords: 0,
+            migratedRecords: 0,
+            percentage: 0,
+            isComplete: false
+        };
+    }
+
+    getMigrationProgress() {
+        return this.migrationProgress;
     }
 
     async connectRetool(connectionString) {
@@ -201,13 +220,13 @@ class DatabaseConfig {
         // Get data from source with LIMIT 5000
         let sourceData;
         if (this.retoolPool instanceof Pool) {
-            // PostgreSQL source
             const result = await this.retoolPool.query(`SELECT * FROM ${sourceTable} LIMIT 5000`);
             sourceData = result.rows;
+            console.log(`Fetched ${sourceData.length} records from ${sourceTable}`);
         } else {
-            // MySQL source
             const [rows] = await this.retoolPool.query(`SELECT * FROM ${sourceTable} LIMIT 5000`);
             sourceData = rows;
+            console.log(`Fetched ${sourceData.length} records from ${sourceTable}`);
         }
         
         // Get total count for progress tracking
@@ -220,19 +239,39 @@ class DatabaseConfig {
             totalCount = parseInt(rows[0].total);
         }
         
+        this.migrationProgress.totalRecords = totalCount;
+        console.log(`Starting migration of ${sourceData.length} records out of total ${totalCount}`);
+        
         // Insert into target
         let migratedCount = 0;
-        for (const row of sourceData) {
-            const columns = Object.keys(row);
-            const values = Object.values(row);
-            const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
-            
-            await this.supabasePool.query(
-                `INSERT INTO ${targetTable} (${columns.join(', ')}) VALUES (${placeholders})`,
-                values
-            );
-            migratedCount++;
+        const startTime = Date.now();
+        const logInterval = setInterval(() => {
+            const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+            const percentage = Math.round((migratedCount / totalCount) * 100);
+            console.log(`Migration progress: ${migratedCount} records migrated in ${elapsedSeconds} seconds (${percentage}%)`);
+        }, 30000); // Log every 30 seconds
+
+        try {
+            for (const row of sourceData) {
+                const columns = Object.keys(row);
+                const values = Object.values(row);
+                const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
+                
+                await this.supabasePool.query(
+                    `INSERT INTO ${targetTable} (${columns.join(', ')}) VALUES (${placeholders})`,
+                    values
+                );
+                migratedCount++;
+                this.migrationProgress.migratedRecords = migratedCount;
+                this.migrationProgress.percentage = Math.round((migratedCount / totalCount) * 100);
+            }
+        } finally {
+            clearInterval(logInterval);
+            this.migrationProgress.isComplete = true;
         }
+
+        const totalTime = Math.floor((Date.now() - startTime) / 1000);
+        console.log(`Migration completed: ${migratedCount} records migrated in ${totalTime} seconds`);
 
         return { 
             success: true, 

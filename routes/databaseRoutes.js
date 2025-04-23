@@ -13,7 +13,8 @@ router.get('/tables/supabase', databaseController.getSupabaseTables);
 // Table preview route
 router.get('/preview/:dbType/:tableName', databaseController.getTablePreview);
 
-// Migration route
+// Migration routes
 router.post('/migrate', databaseController.migrateData);
+router.get('/migration-progress', databaseController.getMigrationProgress);
 
 module.exports = router; 
