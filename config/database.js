@@ -53,14 +53,64 @@ class DatabaseConfig {
 
     async connectSupabase(connectionString) {
         try {
+            // Parse the connection string
+            const url = new URL(connectionString);
+            
+            // Configure the pool with specific settings
             this.supabasePool = new Pool({
-                connectionString: connectionString
+                connectionString: connectionString,
+                ssl: {
+                    rejectUnauthorized: false
+                },
+                // Add specific timeouts and connection settings
+                connectionTimeoutMillis: 10000,
+                query_timeout: 10000,
+                statement_timeout: 10000,
+                idle_in_transaction_session_timeout: 10000,
+                // Force IPv4 lookup
+                family: 4
             });
-            // Test the connection
-            await this.supabasePool.query('SELECT NOW()');
+
+            // Test the connection with a timeout
+            const connectPromise = this.supabasePool.query('SELECT NOW()');
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error('Connection timed out')), 10000)
+            );
+
+            await Promise.race([connectPromise, timeoutPromise]);
+            
             return { success: true, message: 'Successfully connected to Supabase database' };
         } catch (error) {
-            return { success: false, message: `Failed to connect to Supabase database: ${error.message}` };
+            console.error('Supabase connection error:', error);
+            
+            // Clean up failed connection
+            if (this.supabasePool) {
+                await this.supabasePool.end().catch(console.error);
+                this.supabasePool = null;
+            }
+
+            // Provide more specific error messages
+            if (error.code === 'ENETUNREACH') {
+                return { 
+                    success: false, 
+                    message: 'Unable to reach Supabase database. Please check your network connection and ensure the database is accessible from your deployment environment.' 
+                };
+            } else if (error.code === 'ETIMEDOUT') {
+                return { 
+                    success: false, 
+                    message: 'Connection to Supabase timed out. Please check your database endpoint and network settings.' 
+                };
+            } else if (error.code === 'ENOTFOUND') {
+                return { 
+                    success: false, 
+                    message: 'Could not resolve Supabase database host. Please check your connection string.' 
+                };
+            }
+
+            return { 
+                success: false, 
+                message: `Failed to connect to Supabase database: ${error.message}` 
+            };
         }
     }
 
