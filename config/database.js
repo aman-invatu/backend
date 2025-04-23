@@ -55,36 +55,56 @@ class DatabaseConfig {
         try {
             // Parse the connection string
             const url = new URL(connectionString);
+            console.log('Attempting to connect to Supabase at host:', url.hostname);
             
             // Configure the pool with specific settings
-            this.supabasePool = new Pool({
+            const poolConfig = {
                 connectionString: connectionString,
                 ssl: {
-                    rejectUnauthorized: false
+                    rejectUnauthorized: false,
+                    sslmode: 'require'
                 },
                 // Add specific timeouts and connection settings
-                connectionTimeoutMillis: 10000,
-                query_timeout: 10000,
-                statement_timeout: 10000,
-                idle_in_transaction_session_timeout: 10000,
-                // Force IPv4 lookup
-                family: 4
+                connectionTimeoutMillis: 20000, // Increased timeout
+                query_timeout: 20000,
+                statement_timeout: 20000,
+                idle_in_transaction_session_timeout: 20000,
+                max: 20, // Maximum number of clients in the pool
+                keepAlive: true,
+                // Try both IPv4 and IPv6
+                family: 0
+            };
+
+            console.log('Creating connection pool with config:', { ...poolConfig, connectionString: '***hidden***' });
+            this.supabasePool = new Pool(poolConfig);
+
+            // Add error handler to the pool
+            this.supabasePool.on('error', (err) => {
+                console.error('Unexpected error on idle client:', err);
             });
 
             // Test the connection with a timeout
+            console.log('Testing connection...');
             const connectPromise = this.supabasePool.query('SELECT NOW()');
             const timeoutPromise = new Promise((_, reject) => 
-                setTimeout(() => reject(new Error('Connection timed out')), 10000)
+                setTimeout(() => reject(new Error('Connection timed out after 20 seconds')), 20000)
             );
 
-            await Promise.race([connectPromise, timeoutPromise]);
+            const result = await Promise.race([connectPromise, timeoutPromise]);
+            console.log('Connection test successful:', result.rows[0]);
             
             return { success: true, message: 'Successfully connected to Supabase database' };
         } catch (error) {
-            console.error('Supabase connection error:', error);
+            console.error('Detailed Supabase connection error:', {
+                errorCode: error.code,
+                errorMessage: error.message,
+                errorStack: error.stack,
+                errorDetail: error.detail
+            });
             
             // Clean up failed connection
             if (this.supabasePool) {
+                console.log('Cleaning up failed connection pool...');
                 await this.supabasePool.end().catch(console.error);
                 this.supabasePool = null;
             }
@@ -93,23 +113,33 @@ class DatabaseConfig {
             if (error.code === 'ENETUNREACH') {
                 return { 
                     success: false, 
-                    message: 'Unable to reach Supabase database. Please check your network connection and ensure the database is accessible from your deployment environment.' 
+                    message: `Unable to reach Supabase database at ${url.hostname}. Please check if your deployment environment allows outbound connections to port ${url.port || 5432}.` 
                 };
             } else if (error.code === 'ETIMEDOUT') {
                 return { 
                     success: false, 
-                    message: 'Connection to Supabase timed out. Please check your database endpoint and network settings.' 
+                    message: `Connection to Supabase timed out at ${url.hostname}. This might be due to firewall rules or network restrictions.` 
                 };
             } else if (error.code === 'ENOTFOUND') {
                 return { 
                     success: false, 
-                    message: 'Could not resolve Supabase database host. Please check your connection string.' 
+                    message: `Could not resolve Supabase host: ${url.hostname}. Please check your connection string and DNS settings.` 
+                };
+            } else if (error.code === '28P01') {
+                return {
+                    success: false,
+                    message: 'Invalid credentials. Please check your username and password.'
+                };
+            } else if (error.code === '3D000') {
+                return {
+                    success: false,
+                    message: 'Database does not exist. Please check your connection string.'
                 };
             }
 
             return { 
                 success: false, 
-                message: `Failed to connect to Supabase database: ${error.message}` 
+                message: `Failed to connect to Supabase database: ${error.message}. Please check your connection string and ensure the database is accessible.` 
             };
         }
     }
