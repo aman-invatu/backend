@@ -71,6 +71,9 @@ class DatabaseController {
             // Reset progress when starting new migration
             databaseConfig.resetMigrationProgress();
             
+            // Add a small delay to ensure progress is reset
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
             const result = await databaseConfig.migrateData(sourceTable, targetTable);
             res.json(result);
         } catch (error) {
