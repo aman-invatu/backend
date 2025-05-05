@@ -94,7 +94,7 @@ class DatabaseConfig {
                 family: 0
             };
 
-            console.log('Creating connection pool with config:', { ...poolConfig, connectionString: '***hidden***' });
+            // console.log('Creating connection pool with config:', { ...poolConfig, connectionString: '***hidden***' });
             this.supabasePool = new Pool(poolConfig);
 
             // Add error handler to the pool
